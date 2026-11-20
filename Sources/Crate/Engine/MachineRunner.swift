@@ -167,16 +167,21 @@ final class MachineRunner {
             return sizes.map { crate_display_mode(width: UInt32($0.0), height: UInt32($0.1)) }
         }
 
-        /// What the VM asked for, unless that wouldn't fit beside the app in
-        /// what iOS lets crate have: the code region is already in the app's
-        /// footprint, and the guest's memory counts as it touches it.
+        /// The memory a VM is given, by hand against the ceiling iOS holds
+        /// crate to: 6144 MiB, of which the guest's RAM takes what the code
+        /// region, the GPU's pool, and the app itself leave.
+        enum Budget {
+            static let ceiling = 6144
+            static let code = 1024
+            static let vram = 512
+            static let app = 512
+            /// What the others leave: 4096 MiB of guest RAM.
+            static let system = ceiling - code - vram - app
+        }
+
+        /// What the guest's RAM is held to: its share of the budget.
         static func memory(askedGB: Int) -> Int {
-            let asked = askedGB * 1024
-            let available = Int(os_proc_available_memory() >> 20)
-            guard available > 0 else { return asked }
-            let headroom = 768
-            let fits = max(1024, (available - headroom) / 2 * 2)
-            return min(asked, fits)
+            min(askedGB << 10, Budget.system)
         }
 
         /// For a VM put on the iPhone by hand from aTerm's image, which has no
