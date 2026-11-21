@@ -86,7 +86,9 @@ final class MachineRunner {
         display.reset()
         let settings = Settings(vm: vm, files: files, display: display)
         AppLog.write("vm: starting \(vm.name): \(settings.cpus) CPUs, \(settings.memoryMiB) MiB, "
-                     + "code \(region.size >> 20) MiB; \(settings.commandLine)")
+                     + "code \(region.size >> 20) MiB; budget \(Budget.ceiling): guest \(Budget.system), "
+                     + "code \(Budget.code), VRAM \(Budget.vram), app \(Budget.app), slack \(Budget.slack); "
+                     + "\(settings.commandLine)")
         let console = self.console
         let display = self.display
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -169,14 +171,22 @@ final class MachineRunner {
 
         /// The memory a VM is given, by hand against the ceiling iOS holds
         /// crate to: 6144 MiB, of which the guest's RAM takes what the code
-        /// region, the GPU's pool, and the app itself leave.
+        /// region, the GPU's pool, the app itself, and slack leave. The user's
+        /// split — 4 GiB of guest RAM, 1 GiB of code region, 512 MiB of VRAM —
+        /// sums to the ceiling, and each of those shares grows as the guest
+        /// runs: the footprint walked into the limit and iOS closed crate. The
+        /// guest's RAM is the one part that can be made smaller without
+        /// anything failing, so what the others grow into comes out of it.
         enum Budget {
             static let ceiling = 6144
             static let code = 1024
             static let vram = 512
             static let app = 512
-            /// What the others leave: 4096 MiB of guest RAM.
-            static let system = ceiling - code - vram - app
+            /// What the others grow into: the code region fills as the guest
+            /// runs, and the GPU's pool with it.
+            static let slack = 512
+            /// What the others leave: 3584 MiB of guest RAM.
+            static let system = ceiling - code - vram - app - slack
         }
 
         /// What the guest's RAM is held to: its share of the budget.
